@@ -1,4 +1,4 @@
-name: Publish fork image
+﻿name: Publish fork image
 
 on:
   push:
@@ -16,77 +16,133 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  metadata:
     if: github.repository == 'Seekeer/CLIProxyAPI'
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      tag: ${{ steps.meta.outputs.tag }}
+      panel_sha: ${{ steps.meta.outputs.panel_sha }}
+      build_date: ${{ steps.meta.outputs.build_date }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Checkout management panel
-        uses: actions/checkout@v4
-        with:
-          repository: Seekeer/Cli-Proxy-API-Management-Center
-          ref: main
-          path: management-panel
-          persist-credentials: false
-      - name: Prepare build metadata and panel context
+      - name: Resolve component revisions
         id: meta
         shell: bash
         run: |
-          backend_sha=$(git rev-parse HEAD)
-          panel_sha=$(git -C management-panel rev-parse HEAD)
+          panel_sha=$(git ls-remote https://github.com/Seekeer/Cli-Proxy-API-Management-Center.git refs/heads/main | cut -f1)
+          test "${#panel_sha}" -eq 40
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          tag="b${backend_sha:0:12}-p${panel_sha:0:12}-r${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mv management-panel "$RUNNER_TEMP/management-panel"
-          rm -rf "$RUNNER_TEMP/management-panel/.git"
+          tag="b${GITHUB_SHA:0:12}-p${panel_sha:0:12}-r${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
             echo "image=$image"
             echo "tag=$tag"
             echo "panel_sha=$panel_sha"
             echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v3
+
+  build:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout management panel
+        uses: actions/checkout@v4
+        with:
+          repository: Seekeer/Cli-Proxy-API-Management-Center
+          ref: ${{ needs.metadata.outputs.panel_sha }}
+          path: management-panel
+          persist-credentials: false
+      - name: Prepare panel context
+        shell: bash
+        run: |
+          mv management-panel "$RUNNER_TEMP/management-panel"
+          rm -rf "$RUNNER_TEMP/management-panel/.git"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish backend with bundled panel
-        id: build
+      - name: Build and publish architecture image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.fork
           build-contexts: |
             panel=${{ runner.temp }}/management-panel
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:latest
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          tags: ${{ needs.metadata.outputs.image }}:${{ needs.metadata.outputs.tag }}-${{ matrix.arch }}
           build-args: |
-            VERSION=${{ steps.meta.outputs.tag }}
+            VERSION=${{ needs.metadata.outputs.tag }}
             COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            BUILD_DATE=${{ needs.metadata.outputs.build_date }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            io.seekeer.management.revision=${{ steps.meta.outputs.panel_sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Write deployment reference
+            io.seekeer.management.revision=${{ needs.metadata.outputs.panel_sha }}
+          cache-from: type=gha,scope=fork-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=fork-${{ matrix.arch }}
+      - name: Verify container startup and bundled panel
         shell: bash
         env:
-          IMAGE: ${{ steps.meta.outputs.image }}
-          TAG: ${{ steps.meta.outputs.tag }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-          PANEL_SHA: ${{ steps.meta.outputs.panel_sha }}
+          IMAGE: ${{ needs.metadata.outputs.image }}:${{ needs.metadata.outputs.tag }}-${{ matrix.arch }}
         run: |
+          cat > "$RUNNER_TEMP/smoke-config.yaml" <<'YAML'
+          config-version: 8
+          server:
+            host: "0.0.0.0"
+            port: 8317
+          access:
+            api-keys: [ci-smoke-client-key]
+          management:
+            disable-auto-update-panel: true
+          oauth:
+            auth-dir: /tmp/smoke-auth
+          YAML
+          docker pull "$IMAGE"
+          trap 'docker logs fork-smoke; docker rm -f fork-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name fork-smoke -p 127.0.0.1:18317:8317 \
+            -v "$RUNNER_TEMP/smoke-config.yaml:/CLIProxyAPI/config.yaml:ro" "$IMAGE"
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            --max-time 10 http://127.0.0.1:18317/management.html -o "$RUNNER_TEMP/panel.html"
+          docker cp fork-smoke:/opt/cli-proxy-panel/management.html "$RUNNER_TEMP/bundled.html"
+          test -s "$RUNNER_TEMP/bundled.html"
+          cmp "$RUNNER_TEMP/bundled.html" "$RUNNER_TEMP/panel.html"
+
+  publish:
+    needs: [metadata, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified multi-platform image
+        shell: bash
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          PANEL_SHA: ${{ needs.metadata.outputs.panel_sha }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE:$TAG" --tag "$IMAGE:latest" \
+            "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')
           {
-            echo '## Published image'
-            echo "Tagged image: \`$IMAGE:$TAG\`"
-            echo "Pinned image: \`$IMAGE@$DIGEST\`"
-            echo "Backend: \`$GITHUB_SHA\`"
-            echo "Panel: \`$PANEL_SHA\`"
+            echo '## Published and smoke-tested image (amd64 + arm64)'
+            echo "Tagged image: $IMAGE:$TAG"
+            echo "Pinned image: $IMAGE@$digest"
+            echo "Backend: $GITHUB_SHA"
+            echo "Panel: $PANEL_SHA"
             echo 'Set management.disable-auto-update-panel to true (v8 config) to retain the bundled panel.'
           } >> "$GITHUB_STEP_SUMMARY"
