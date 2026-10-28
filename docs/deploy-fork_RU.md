@@ -6,10 +6,10 @@
 ## Публикация
 
 Workflow [Publish fork image](https://github.com/Seekeer/CLIProxyAPI/actions/workflows/fork-image.yml)
-запускается после push в `main` бэкенда, вручную через **Run workflow** и ежедневно
-в 03:23 UTC. Он собирает текущий коммит бэкенда и `main` панели из
-`Seekeer/Cli-Proxy-API-Management-Center`. После изменения только панели запустите
-workflow вручную либо дождитесь ежедневной сборки.
+запускается только после push в `main` бэкенда. Ручной запуск и расписание отключены.
+Он собирает текущий коммит бэкенда и `main` панели из
+`Seekeer/Cli-Proxy-API-Management-Center`. Изменение только панели само по себе
+не запускает сборку: оно попадёт в образ при следующем push в `main` бэкенда.
 
 Синхронизация форков с upstream этим workflow не выполняется.
 Обе архитектуры собираются параллельно на нативных runners. Перед обновлением
