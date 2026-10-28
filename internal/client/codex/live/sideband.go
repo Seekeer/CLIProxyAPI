@@ -408,6 +408,10 @@ func (h *Handler) HandleSideband(c *gin.Context) {
 		writeLiveError(c, http.StatusServiceUnavailable, "Codex auth unavailable")
 		return
 	}
+	if !auth.ClientKeyRoutingAllows(ctx, selected) {
+		writeLiveError(c, http.StatusForbidden, "Credential is not permitted by the client key routing policy")
+		return
+	}
 
 	if selection != nil {
 		attemptCtx, releaseAttempt, errAttempt := selection.AttemptContext(ctx)

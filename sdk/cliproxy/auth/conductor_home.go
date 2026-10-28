@@ -956,6 +956,9 @@ func (m *Manager) pickNextViaHome(ctx context.Context, model string, opts clipro
 }
 
 func (m *Manager) pickHomeDispatchSelection(ctx context.Context, model string, opts cliproxyexecutor.Options) (*HomeDispatchSelection, error) {
+	if policy, ok := internalconfig.ClientKeyRoutingFromContext(ctx); ok && policy.Mode != "all" {
+		return nil, &Error{Code: "routing_policy_unsupported", Message: "Home dispatch does not support client key routing restrictions", HTTPStatus: http.StatusServiceUnavailable}
+	}
 	if m == nil {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}

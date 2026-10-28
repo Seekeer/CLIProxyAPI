@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -519,6 +520,14 @@ func accessAuthMiddleware(manager *sdkaccess.Manager, realtimeError bool) gin.Ha
 					c.Set("accessMetadata", result.Metadata)
 				}
 				reqCtx := coreusage.WithAPIKey(c.Request.Context(), result.Principal)
+				if encoded := result.Metadata["client-key-routing"]; encoded != "" {
+					var policy config.ClientKeyRouting
+					if errDecode := json.Unmarshal([]byte(encoded), &policy); errDecode != nil {
+						c.AbortWithStatus(http.StatusForbidden)
+						return
+					}
+					reqCtx = config.WithClientKeyRouting(reqCtx, policy)
+				}
 				reqCtx = coreusage.WithAccessProvider(reqCtx, result.Provider)
 				reqCtx = coreusage.WithIsNativeKey(reqCtx, coreusage.IsNativeAccessProvider(result.Provider))
 				c.Request = c.Request.WithContext(reqCtx)
@@ -587,6 +596,26 @@ func realtimeAuthMiddleware(manager *sdkaccess.Manager, handler *codexlive.Handl
 		c.Set("userApiKey", principal)
 		c.Set("accessProvider", provider)
 		reqCtx := coreusage.WithAPIKey(c.Request.Context(), principal)
+		// Re-authenticate native issuers so ephemeral sessions inherit current restrictions.
+		if provider == sdkaccess.DefaultAccessProviderName && manager != nil {
+			issuerRequest := c.Request.Clone(reqCtx)
+			issuerRequest.Header = make(http.Header)
+			issuerRequest.Header.Set("Authorization", "Bearer "+principal)
+			issuerRequest.URL.RawQuery = ""
+			issuer, errIssuer := manager.Authenticate(reqCtx, issuerRequest)
+			if errIssuer != nil || issuer == nil || issuer.Provider != provider {
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+			if encoded := issuer.Metadata["client-key-routing"]; encoded != "" {
+				var policy config.ClientKeyRouting
+				if json.Unmarshal([]byte(encoded), &policy) != nil {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				reqCtx = config.WithClientKeyRouting(reqCtx, policy)
+			}
+		}
 		reqCtx = coreusage.WithAccessProvider(reqCtx, provider)
 		reqCtx = coreusage.WithIsNativeKey(reqCtx, coreusage.IsNativeAccessProvider(provider))
 		c.Request = c.Request.WithContext(reqCtx)

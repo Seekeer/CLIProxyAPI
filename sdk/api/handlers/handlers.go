@@ -599,6 +599,7 @@ func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *
 
 	if requestCtx != nil {
 		parentCtx = httptransport.InheritDecorator(parentCtx, requestCtx)
+		parentCtx = config.InheritClientKeyRouting(parentCtx, requestCtx)
 	}
 	if requestCtx != nil && logging.GetRequestID(parentCtx) == "" {
 		if requestID := logging.GetRequestID(requestCtx); requestID != "" {

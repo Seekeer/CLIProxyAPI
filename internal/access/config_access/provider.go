@@ -2,6 +2,8 @@ package configaccess
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"net/http"
 	"strings"
 
@@ -22,15 +24,21 @@ func Register(cfg *sdkconfig.SDKConfig) {
 		return
 	}
 
+	p := newProvider(sdkaccess.DefaultAccessProviderName, keys)
+	p.policies = make(map[string]config.ClientKeyRouting)
+	for _, policy := range cfg.ClientKeyRouting {
+		p.policies[policy.APIKey] = policy
+	}
 	sdkaccess.RegisterProvider(
 		sdkaccess.AccessProviderTypeConfigAPIKey,
-		newProvider(sdkaccess.DefaultAccessProviderName, keys),
+		p,
 	)
 }
 
 type provider struct {
-	name string
-	keys map[string]struct{}
+	name     string
+	keys     map[string]struct{}
+	policies map[string]config.ClientKeyRouting
 }
 
 func newProvider(name string, keys []string) *provider {
@@ -90,12 +98,16 @@ func (p *provider) Authenticate(_ context.Context, r *http.Request) (*sdkaccess.
 			continue
 		}
 		if _, ok := p.keys[candidate.value]; ok {
+			metadata := map[string]string{"source": candidate.source}
+			if policy, exists := p.policies[candidate.value]; exists {
+				policy.APIKey = ""
+				encoded, _ := json.Marshal(policy)
+				metadata["client-key-routing"] = string(encoded)
+			}
 			return &sdkaccess.Result{
 				Provider:  p.Identifier(),
 				Principal: candidate.value,
-				Metadata: map[string]string{
-					"source": candidate.source,
-				},
+				Metadata:  metadata,
 			}, nil
 		}
 	}

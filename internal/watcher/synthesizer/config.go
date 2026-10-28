@@ -103,6 +103,7 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 		if entry.Priority != 0 {
 			attrs["priority"] = strconv.Itoa(entry.Priority)
 		}
+		attrs[coreauth.AttributeRoutingID] = entry.RoutingID
 		addWeightToAttrs(entry.Weight, attrs)
 		if base != "" {
 			attrs["base_url"] = base
@@ -165,6 +166,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 		if ck.Priority != 0 {
 			attrs["priority"] = strconv.Itoa(ck.Priority)
 		}
+		attrs[coreauth.AttributeRoutingID] = ck.RoutingID
 		addWeightToAttrs(ck.Weight, attrs)
 		if base != "" {
 			attrs["base_url"] = base
@@ -249,6 +251,7 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 		if entry.Priority != 0 {
 			attrs["priority"] = strconv.Itoa(entry.Priority)
 		}
+		attrs[coreauth.AttributeRoutingID] = entry.RoutingID
 		addWeightToAttrs(entry.Weight, attrs)
 		if baseURL != "" {
 			attrs["base_url"] = baseURL
@@ -333,6 +336,7 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 				attrs["priority"] = strconv.Itoa(compat.Priority)
 			}
 			addWeightToAttrs(entry.Weight, attrs)
+			attrs[coreauth.AttributeRoutingID] = entry.RoutingID
 			if key != "" {
 				attrs["api_key"] = key
 			}
@@ -428,6 +432,7 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 		if compat.Priority != 0 {
 			attrs["priority"] = strconv.Itoa(compat.Priority)
 		}
+		attrs[coreauth.AttributeRoutingID] = compat.RoutingID
 		addWeightToAttrs(compat.Weight, attrs)
 		if key != "" {
 			attrs["api_key"] = key

@@ -171,6 +171,10 @@ func (h *Handler) ConfigV8(c *gin.Context) {
 		}
 	}
 	stripAPIKeysAuthIndexesFromRoot(root)
+	if err = config.EnsureUpstreamRoutingIDs(root, before); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid_routing_ids"})
+		return
+	}
 	config.NormalizeCollectionNodeStyles(root)
 	data, err = yaml.Marshal(&doc)
 	if err != nil {
@@ -180,6 +184,14 @@ func (h *Handler) ConfigV8(c *gin.Context) {
 	next, err := config.ParseConfigBytes(data)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid_config", "message": err.Error()})
+		return
+	}
+	if !preserveClientRoutingRestrictions(before, next) {
+		c.JSON(http.StatusConflict, gin.H{"error": "routing_policy_would_be_removed"})
+		return
+	}
+	if !validClientRoutingReferences(root, before, next) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "unknown_upstream_routing_id"})
 		return
 	}
 	if err = config.ValidateV8Config(data); err != nil {

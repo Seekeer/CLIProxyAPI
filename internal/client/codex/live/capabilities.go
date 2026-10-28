@@ -107,6 +107,13 @@ func (h *Handler) HandleHangup(c *gin.Context) {
 		temporarySelection = selection != nil
 	}
 	var selectionRelease func()
+	if !auth.ClientKeyRoutingAllows(ctx, selected) {
+		if temporarySelection && activeSelection != nil {
+			activeSelection.End("routing_policy_denied")
+		}
+		writeRealtimeError(c, http.StatusForbidden, "Credential is not permitted by the client key routing policy", "permission_error", "routing_policy_denied")
+		return
+	}
 	if activeSelection != nil {
 		attemptCtx, releaseAttempt, errAttempt := activeSelection.AttemptContext(ctx)
 		if errAttempt != nil {

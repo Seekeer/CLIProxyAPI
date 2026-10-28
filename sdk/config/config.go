@@ -4,9 +4,18 @@
 // embed CLIProxyAPI without importing internal packages.
 package config
 
-import internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+import (
+	"context"
+	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+)
+
+func InheritClientKeyRouting(dst, src context.Context) context.Context {
+	return internalconfig.InheritClientKeyRouting(dst, src)
+}
 
 type SDKConfig = internalconfig.SDKConfig
+
+type ClientKeyRouting = internalconfig.ClientKeyRouting
 
 type Config = internalconfig.Config
 
