@@ -88,5 +88,5 @@ jobs:
             echo "Pinned image: \`$IMAGE@$DIGEST\`"
             echo "Backend: \`$GITHUB_SHA\`"
             echo "Panel: \`$PANEL_SHA\`"
-            echo 'Set remote-management.disable-auto-update-panel to true to retain the bundled panel.'
+            echo 'Set management.disable-auto-update-panel to true (v8 config) to retain the bundled panel.'
           } >> "$GITHUB_STEP_SUMMARY"
