@@ -112,7 +112,7 @@ jobs:
           trap 'docker logs fork-smoke; docker rm -f fork-smoke >/dev/null 2>&1 || true' EXIT
           docker run -d --name fork-smoke -p 127.0.0.1:18317:8317 \
             -v "$RUNNER_TEMP/smoke-config.yaml:/CLIProxyAPI/config.yaml:ro" "$IMAGE"
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 \
             --max-time 10 http://127.0.0.1:18317/management.html -o "$RUNNER_TEMP/panel.html"
           docker cp fork-smoke:/opt/cli-proxy-panel/management.html "$RUNNER_TEMP/bundled.html"
           test -s "$RUNNER_TEMP/bundled.html"
