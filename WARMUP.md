@@ -97,6 +97,8 @@ Touch points in existing files (kept minimal for upstream merges):
 - `internal/config/config.go` — one `Warmup` field
 - `internal/config/config_v8.go` — allow the `warmup` root section
 - `internal/config/parse.go` — validate on parse
+- `internal/logging/global_logger.go` — 3 lines adding the warmup fields to the
+  formatter's allow-list
 - `internal/api/server_reload.go` — `RequestExecutor()` accessor
 - `sdk/cliproxy/service.go`, `service_config.go`, `service_lifecycle.go` — start,
   reload and stop the scheduler
@@ -108,3 +110,65 @@ go test ./internal/warmup/ ./internal/config/
 ```
 
 The tests never contact an upstream; the executor is mocked.
+
+## Rollout
+
+The production image is kept on the host, so rollback is one line of YAML.
+
+```sh
+cd /home/dim/cli-proxy-api
+cp compose.yaml compose.yaml.bak-$(date +%Y%m%d-%H%M%S)
+docker compose stop cli-proxy-api
+sed -i 's#image: eceasy/cli-proxy-api@sha256:.*#image: cliproxyapi:warmup#' compose.yaml
+docker compose up -d
+```
+
+Verify:
+
+```sh
+curl -s http://192.168.0.61:8317/        # welcome JSON
+docker logs --tail 50 cli-proxy-api      # no errors; "warmup scheduler started"
+```
+
+### Manual single-account run before committing to 06:00
+
+`enabled: true` with an empty `schedules` list is rejected on purpose. To do the
+one-account trial, set a schedule a few minutes ahead, watch the log for the
+`auth_index=...` line, confirm `X-Codex-Primary-Used-Percent` moved, then set
+the real schedule:
+
+```yaml
+warmup:
+  enabled: true
+  timezone: "Europe/Moscow"
+  model: "gpt-6-luna"
+  reasoning-effort: "low"
+  prompt: "Reply with exactly: ok"
+  accounts: ["codex-87582b03-booxdasfoland@gmail.com-team.json"]
+  schedules: ["06:00"]
+```
+
+Finally disable plugins and set the real schedule; both are hot-reloaded:
+
+```yaml
+plugins:
+  enabled: false
+```
+
+### Rollback
+
+Restore the backed-up `compose.yaml` and run `docker compose up -d`.
+Setting `warmup.enabled: false` alone already makes the feature inert.
+
+## Notes and decisions
+
+- `run-on-start` catch-up is capped at 12 hours. Without a cap, a week of
+  downtime would fire a warmup a week late and shift the window away from the
+  intended start.
+- The cooldown check is model-scoped: a credential cooling on a different model
+  is still warmed for the configured one.
+- A successful HTTP response with no model output is recorded as `empty`, not
+  `success`. The window did start, but the log stays honest.
+- The fork is based on v8.0.36 — the version the target server runs — so a
+  version upgrade stays a separate, revertible step from this feature.
+
