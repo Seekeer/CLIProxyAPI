@@ -1,0 +1,44 @@
+# Dedicated image for the warmup fork.
+#
+# Kept separate from the upstream Dockerfile so a merge from upstream never
+# conflicts here. Differences from upstream:
+#   * the build records the fork revision so `docker inspect` identifies it;
+#   * the IANA time zone database is embedded in the binary (time/tzdata), so
+#     warmup.timezone works regardless of the base image's /usr/share/zoneinfo.
+#
+# CGO is required, matching the upstream build.
+FROM golang:1.26-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+ARG VERSION=warmup
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+
+RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false \
+      -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" \
+      -o ./CLIProxyAPI ./cmd/server/
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir /CLIProxyAPI
+
+COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
+
+COPY config.example.yaml /CLIProxyAPI/config.example.yaml
+
+WORKDIR /CLIProxyAPI
+
+EXPOSE 8317
+
+CMD ["./CLIProxyAPI"]

@@ -187,6 +187,10 @@ func (s *Service) Run(ctx context.Context) error {
 		fmt.Printf("API server started successfully on: %s:%d\n", currentCfg.Host, currentCfg.Port)
 	}
 
+	// Scheduled warmup runs after the server is listening so its in-process
+	// requests go through the same handler as any client request.
+	s.startWarmup(ctx)
+
 	s.configRuntimeMu.Lock()
 	currentCfg := s.currentConfig()
 	s.applyPprofConfig(currentCfg)
@@ -269,6 +273,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		if runCancel != nil {
 			runCancel()
 		}
+
+		// Stop the warmup scheduler before the HTTP server goes away; its
+		// in-flight request uses the shared handler.
+		s.stopWarmup()
 
 		s.homeLifecycleMu.Lock()
 		if supervisor := s.homeSupervisor; supervisor != nil {

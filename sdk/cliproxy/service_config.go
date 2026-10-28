@@ -179,6 +179,9 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
 	if s == nil || cfg == nil {
 		return false
 	}
+	// Warmup is independent of the request path; hand it the new settings before
+	// anything that can fail so a hot-reload is never lost.
+	s.applyWarmupConfig(cfg)
 	s.configRuntimeMu.Lock()
 	defer s.configRuntimeMu.Unlock()
 	if !s.configCommitCurrent(commit) {

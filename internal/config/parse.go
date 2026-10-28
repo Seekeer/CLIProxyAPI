@@ -55,6 +55,10 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	if errValidate := cfg.ValidateCredentialWeights(); errValidate != nil {
 		return nil, errValidate
 	}
+	if errValidate := cfg.Warmup.Validate(); errValidate != nil {
+		return nil, errValidate
+	}
+	cfg.Warmup = NormalizedWarmupConfig(cfg.Warmup)
 	if errValidate := cfg.Codex.LiveMediaRelay.Validate(); errValidate != nil {
 		return nil, errValidate
 	}

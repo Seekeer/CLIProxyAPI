@@ -16,6 +16,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
 	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -253,6 +254,16 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
 		openAICompatCount,
 	)
 	return ctx.Err() == nil
+}
+
+// RequestExecutor exposes the shared request handler so in-process features
+// (such as the warmup scheduler) execute through the same path as an inbound
+// client request rather than a private upstream shortcut.
+func (s *Server) RequestExecutor() *handlers.BaseAPIHandler {
+	if s == nil {
+		return nil
+	}
+	return s.handlers
 }
 
 func (s *Server) SetWebsocketAuthChangeHandler(fn func(bool, bool)) {

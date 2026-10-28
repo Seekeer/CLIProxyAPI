@@ -13,6 +13,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/homeplugins"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/warmup"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/wsrelay"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
@@ -65,6 +66,12 @@ type Service struct {
 
 	// server is the HTTP API server instance.
 	server *api.Server
+
+	// warmup schedules account-pinned requests that start credential windows.
+	// It reuses the server's request handler, so it is created once the server
+	// exists and always runs the same path as a client request.
+	warmupMu sync.Mutex
+	warmup   *warmup.Scheduler
 
 	// pprofServer manages the optional pprof HTTP debug server.
 	pprofServer *pprofServer

@@ -1194,6 +1194,30 @@ observability:
 # Existing native flags/routes and higher-priority plugin flags/routes cannot be replaced.
 # Plugin list Management API reads Logo and ConfigFields from plugin metadata for management UI display.
 # Per-plugin enabled only controls plugins.configs.<pluginID>.enabled and does not implicitly change global plugins.enabled.
+# Warmup schedules one short, account-pinned request per selected Codex
+# credential so the five-hour window starts before the first real use. The block
+# is inert while enabled is false. Changes are hot-reloaded; no restart needed.
+# Warmup runs through the normal request path, so routing, quota cooldowns,
+# payload overrides and usage accounting all apply. It never writes to the auth
+# directory and never changes tokens.
+# The completed-slot state lives in warmup-state.json next to this file so a
+# restart cannot repeat a warmup.
+warmup:
+  enabled: false
+  # IANA zone used to interpret schedules. Defaults to UTC.
+  timezone: "UTC"
+  # Required when enabled. Use the model slug your Codex client uses.
+  model: ""
+  # Reasoning effort sent with the warmup turn.
+  reasoning-effort: "low"
+  prompt: "Reply with exactly: ok"
+  # [] warms every active Codex credential; otherwise list auth file names.
+  accounts: []
+  # Daily local trigger times, 24-hour HH:MM, at most 24 unique values.
+  schedules: []
+  # Catch up once at startup when a slot was missed while the process was down.
+  run-on-start: false
+
 plugins:
   enabled: false
   dir: "plugins"

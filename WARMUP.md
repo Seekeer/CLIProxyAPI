@@ -1,0 +1,110 @@
+# Warmup fork
+
+This fork of [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI)
+v8.0.36 adds one feature: a built-in, centrally scheduled **Codex window warmup**.
+
+It replaces the third-party `cpa-window-starter` plugin. Because it lives in the
+core, it goes through the normal request path instead of a plugin host call.
+
+## What it does
+
+At each configured local time it sends **exactly one** short request per selected
+Codex credential, pinned to that credential, so the five-hour window starts
+earlier than the first real use.
+
+The request is executed through the same handler as an inbound client request
+(`BaseAPIHandler.ExecuteModel` with the credential pinned via
+`handlers.WithPinnedAuthID`), so all of the following apply normally:
+
+- credential selection, priority and weights (`routing`)
+- quota cooldowns and availability gates
+- payload override / inference rules
+- protocol translation
+- usage statistics
+
+It never writes to the auth directory and never modifies tokens.
+
+## Configuration
+
+Top-level `warmup` block. The full annotated form lives in
+[`config.example.yaml`](config.example.yaml).
+
+```yaml
+warmup:
+  enabled: false
+  timezone: "Europe/Moscow"
+  model: "gpt-6-luna"
+  reasoning-effort: "low"
+  prompt: "Reply with exactly: ok"
+  accounts: []          # [] = every active Codex credential, else auth file names
+  schedules: ["06:00"]  # daily, 24-hour HH:MM, at most 24, no duplicates
+  run-on-start: false
+```
+
+### Validation
+
+Configuration errors fail the parse, so a bad block stops the reload instead of
+silently doing nothing:
+
+| Setting | Rule |
+| --- | --- |
+| `timezone` | valid IANA zone (default `UTC`) |
+| `schedules` | `HH:MM`, 24-hour, at most 24 entries, no duplicates |
+| `model` | required when `enabled: true` |
+| `schedules` | at least one entry when `enabled: true` |
+
+`enabled: false` is the default and makes the whole block inert.
+
+## Behaviour details
+
+- **Idempotency.** Each run records its completed slot in
+  `warmup-state.json` next to the config file, written atomically. A restart
+  never repeats a completed slot, and a double timer fire cannot run it twice.
+- **Cooldown safety.** A credential that is disabled, has a rejected token, or is
+  inside a cooldown for this model is skipped and logged, never warmed.
+- **Isolation.** One credential failing does not stop the others.
+- **Logging.** Every attempt logs `auth_index` (the auth file name), the
+  account, the status, and — when the upstream reports them —
+  `X-Codex-Primary-Used-Percent` and `X-Codex-Primary-Reset-After-Seconds`.
+- **Hot reload.** Editing the config is enough; the scheduler picks up new
+  settings without a restart.
+- **`run-on-start`.** Catches up a missed slot once at startup, but only if it
+  was missed within the last 12 hours.
+
+## Building
+
+```sh
+docker build -f Dockerfile.warmup -t cliproxyapi:warmup .
+```
+
+`Dockerfile.warmup` is intentionally separate from the upstream `Dockerfile`.
+The IANA database is embedded in the binary (`time/tzdata`), so time zones work
+regardless of the base image.
+
+## Files
+
+All feature code is additive; the upstream touch points are three small hooks.
+
+| Path | Purpose |
+| --- | --- |
+| `internal/config/config_warmup.go` | config type, parsing and validation |
+| `internal/warmup/` | scheduler, slot logic, state store, request building |
+| `sdk/cliproxy/service_warmup.go` | lifecycle wiring |
+| `Dockerfile.warmup` | dedicated image |
+
+Touch points in existing files (kept minimal for upstream merges):
+
+- `internal/config/config.go` — one `Warmup` field
+- `internal/config/config_v8.go` — allow the `warmup` root section
+- `internal/config/parse.go` — validate on parse
+- `internal/api/server_reload.go` — `RequestExecutor()` accessor
+- `sdk/cliproxy/service.go`, `service_config.go`, `service_lifecycle.go` — start,
+  reload and stop the scheduler
+
+## Tests
+
+```sh
+go test ./internal/warmup/ ./internal/config/
+```
+
+The tests never contact an upstream; the executor is mocked.

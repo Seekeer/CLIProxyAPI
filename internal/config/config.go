@@ -200,4 +200,8 @@ type Config struct {
 
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
+
+	// Warmup schedules account-pinned warmup requests that start credential
+	// windows early. See config_warmup.go for the contract.
+	Warmup WarmupConfig `yaml:"warmup,omitempty" json:"warmup,omitempty"`
 }

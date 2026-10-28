@@ -301,3 +301,38 @@ func TestLogFormatterFormatsShortRequestID(t *testing.T) {
 		t.Fatalf("formatted line %q does not contain expected placeholder [--------]", lineEmpty)
 	}
 }
+
+// Warmup outcome fields must reach the log line, not just the entry data.
+func TestLogFormatterPrintsWarmupFields(t *testing.T) {
+	entry := log.NewEntry(log.New())
+	entry.Time = time.Date(2026, 10, 28, 6, 0, 0, 0, time.Local)
+	entry.Level = log.InfoLevel
+	entry.Message = "warmup: credential warmed"
+	entry.Data["slot"] = "2026-10-28T06:00:00+03:00"
+	entry.Data["auth_index"] = "codex-a.json"
+	entry.Data["account"] = "a@example.com"
+	entry.Data["status"] = "success"
+	entry.Data["http_status"] = 200
+	entry.Data["used_percent"] = 4.5
+	entry.Data["reset_after_seconds"] = 14738
+
+	formatted, errFormat := (&LogFormatter{}).Format(entry)
+	if errFormat != nil {
+		t.Fatalf("Format() error = %v", errFormat)
+	}
+
+	line := string(formatted)
+	for _, want := range []string{
+		"slot=2026-10-28T06:00:00+03:00",
+		`auth_index="codex-a.json"`,
+		`account="a@example.com"`,
+		`status="success"`,
+		"http_status=200",
+		"used_percent=4.5",
+		"reset_after_seconds=14738",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("formatted line %q missing %s", line, want)
+		}
+	}
+}
